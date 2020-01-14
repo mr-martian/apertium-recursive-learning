@@ -1,0 +1,23 @@
+AP -> adj
+AP -> adv AP
+AP -> preadv AP
+AP -> adj PP
+NP -> n
+NP -> AP NP
+NP -> NP PP
+DP -> NP
+DP -> det NP
+DP -> np
+DP -> prn
+DP -> DP gen NP
+PP -> pr DP
+V -> vblex
+V -> vbser
+V -> vbhaver V
+V -> vaux V
+V -> adv V
+VP -> V
+VP -> V DP
+VP -> V AP
+VP -> V PP
+S -> DP VP
