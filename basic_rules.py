@@ -63,15 +63,20 @@ class Rule:
 class LU:
     def __init__(self, slem: str, stags: List[str], tlem: str, ttags: List[str], children):
         self.slem = slem
-        self.stags = stags
+        self.stags = stags if stags != [''] else []
         self.tlem = tlem
-        self.ttags = ttags
+        self.ttags = ttags if ttags != [''] else []
         self.children = children
         self.skippable = False
         self.reorder = None # data type?
         self.tag_gain = [] # data type?
+        self.possible: List[Tuple[int, int]] = []
     def __str__(self):
-        return '%s %s / %s %s ( %s )' % (self.slem, self.stags, self.tlem, self.ttags, ' '.join(map(str, self.children)))
+        sl = self.slem + ''.join('<%s>' % x for x in self.stags)
+        tl = self.tlem + ''.join('<%s>' % x for x in self.ttags)
+        if sl and tl:
+            sl += '/'
+        return '^%s%s{ %s }( %s %s )$' % (sl, tl, ' '.join(map(str, self.children)), self.possible, self.skippable)
     def equiv(self, other):
         if self.tlem != other.tlem:
             return False
@@ -86,6 +91,8 @@ class LU:
             for i, w in enumerate(words):
                 if self.equiv(w):
                     ret.append((i, i))
+            if not ret:
+                ret.append((-1,-1))
         else:
             ops = []
             for i, ch in enumerate(self.children):
@@ -195,15 +202,17 @@ def align_corpus(trees, lexfile):
     for tr, lx in zip(trees, lexlines):
         pairs.append((parse_tree('^root{' + tr + '}$'), parse_tree('^root{' + lx + '}$')))
     for a, b in pairs:
-        # TODO: this should also set skippable when N words in b match N+M words in a
-        skip = set(range(len(b.children)))
-        for ch in a.iterchildren():
-            ls = list(skip)
-            for l in ls:
-                if b.children[l].equiv(ch):
-                    skip.remove(l)
-        for s in skip:
-            b.children[s].skippable = True
+        ls = list(range(len(b.children)))
+        sets = []
+        while ls:
+            n = ls.pop()
+            sets.append([n] + [x for x in ls if b.children[x].equiv(b.children[n])])
+            ls = [x for x in ls if not b.children[x].equiv(b.children[n])]
+        for st in sets:
+            n = len([x for x in a.iterchildren() if x.equiv(b.children[st[0]])])
+            if n < len(st):
+                for s in st:
+                    b.children[s].skippable = True
         al = a.align(b.children)
         print(str(a))
         print(str(b))
