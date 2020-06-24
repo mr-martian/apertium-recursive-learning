@@ -1,7 +1,10 @@
 ^Mío<det><pos><mf><sg>$ ^aerodeslizador<n><m><sg>$ ^ser<vbser><pri><p3><sg>$ ^lleno<adj><m><sg>$ ^de<pr>$ ^anguila<n><f><pl>$^.<sent>$
-^A menudo<adv>$ ^comer<vblex><pri><p1><sg>$ ^emparedado<n><m><pl>$^.<sent>$
+^A menudo<adv>$ ^tirar<vblex><pri><p1><sg>$ ^emparedado<n><m><pl>$^.<sent>$
 ^Aquello<prn><tn><m><sp>$ ^ser<vbser><pri><p3><sg>$ ^uno<det><ind><f><sg>$ ^mochila<n><f><sg>$^.<sent>$
 ^Haber<vbhaver><pri><p1><sg>$ ^leer<vblex><pp><m><sg>$ ^mucho<det><qnt><m><pl>$ ^libro<n><m><pl>$^.<sent>$
 ^Narrar<vblex><pri><p1><sg>$ ^a<pr>$ ^el<det><def><m><sg>$ ^sentido<n><m><sg>$ ^de<pr>$ ^importancia<n><f><sg>$ ^de<pr>$ ^aquel<det><dem><m><sg>$ ^gato<n><m><sg>$^.<sent>$
-^El<det><def><m><pl>$ ^pico<n><m><pl>$ ^de<pr>$ ^el<det><def><m><pl>$ ^ganso<n><m><pl>$ ^ser<vbser><pri><p3><pl>$ ^muy<preadv>$ ^poderoso<adj><m><pl>$^.<sent>$
-^Comer<vblex><pri><p1><sg>$ ^huevo<n><m><pl>$ ^rojo<adj><m><pl>$^.<sent>$^.<sent>$
+^Tirar<vblex><pri><p1><sg>$ ^huevo<n><m><pl>$ ^rojo<adj><m><pl>$^.<sent>$
+^El<det><def><m><pl>$ ^dedo<n><m><pl>$ ^de<pr>$ ^el<det><def><m><sg>$ ^gato<n><m><sg>$^.<sent>$
+^En<pr>$ ^mío<det><pos><mf><pl>$ ^caja<n><f><pl>$^.<sent>$
+^Con<pr>$ ^el<det><def><f><sg>$ ^cámara<n><mf><sg>$ ^de<pr>$ ^mío<det><pos><mf><sg>$ ^ordenador<n><m><sg>$^.<sent>$
+^.<sent>$^.<sent>$

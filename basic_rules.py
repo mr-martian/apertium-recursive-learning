@@ -36,6 +36,7 @@ class OutputNode:
     def __init__(self, source: int, clips: List[Tuple[int, str]]):
         self.source = source
         self.clips = clips
+        self.value = ''
     def __str__(self):
         args = []
         for name, src in self.clips:
@@ -49,16 +50,19 @@ class OutputNode:
         return f'{self.source}{s}'
 
 class Rule:
-    all_rules = []
+    all_rules = {}
     def __init__(self, parent: str, children: List[str]):
         self.parent = parent
         self.inputs = [InputNode([tag]) for tag in children]
         self.outputs = [OutputNode(i+1, []) for i in range(len(self.inputs))]
-        Rule.all_rules.append(self)
+        self.instances = []
+        self.name = (parent + '_' + '_'.join(children)).lower()
+        Rule.all_rules[self.name] = self
     def __str__(self):
         ins = ' '.join(map(str, self.inputs))
         outs = ' _ '.join(map(str, self.outputs))
-        return '%s -> %s { %s } ;' % (self.parent, ins, outs)
+        return '%s -> %s [$lem=%s] { %s } ;' % (self.parent, ins, self.name, outs)
+        # TODO: don't want [$lem] in final output
 
 class LU:
     def __init__(self, slem: str, stags: List[str], tlem: str, ttags: List[str], children):
@@ -70,13 +74,18 @@ class LU:
         self.skippable = False
         self.reorder = None # data type?
         self.tag_gain = [] # data type?
+                                # [ ( self_align [ ( align, child) ] ) ]
+        self.children_possible: List[Tuple[Tuple[int, int], List[Tuple[Tuple[int, int], int]]]] = []
         self.possible: List[Tuple[int, int]] = []
+        self.idx = []
+        if self.tlem in Rule.all_rules:
+            Rule.all_rules[self.tlem].instances.append(self)
     def __str__(self):
         sl = self.slem + ''.join('<%s>' % x for x in self.stags)
         tl = self.tlem + ''.join('<%s>' % x for x in self.ttags)
         if sl and tl:
             sl += '/'
-        return '^%s%s{ %s }( %s %s )$' % (sl, tl, ' '.join(map(str, self.children)), self.possible, self.skippable)
+        return '^%s%s{ %s }%s$' % (sl, tl, ' '.join(map(str, self.children)), self.possible)
     def equiv(self, other):
         if self.tlem != other.tlem:
             return False
@@ -99,7 +108,6 @@ class LU:
                 ls = [(a,i) for a in ch.align(words)]
                 if ls or len(ch.children) > 0:
                     ops.append(ls)
-            pos = []
             for op in itertools.product(*ops):
                 ls = list(op)
                 ls.sort()
@@ -111,21 +119,73 @@ class LU:
                     if not all(x.skippable for x in words[l+1:r]):
                         break
                 else:
-                    pos.append(op)
                     ls2 = [l for l in ls if l[0][0] != -1]
+                    ap = None
                     if ls2:
-                        ret.append((ls2[0][0][0], ls2[-1][0][1]))
+                        ap = (ls2[0][0][0], ls2[-1][0][1])
                     else:
-                        ret.append((-1, -1))
-            self.children_possible = pos
+                        ap = (-1, -1)
+                    if ap not in ret:
+                        ret.append(ap)
+                    self.children_possible.append((ret[-1], ls))
         self.possible = ret
         return ret
+    def filter_align(self, ok):
+        pos = [x for x in self.possible if x in ok]
+        self.possible = []
+        # this loop makes us prefer narrower alignments
+        for p in pos:
+            for q in pos:
+                if p[0] <= q[0] and p[1] >= q[1] and p != q:
+                    break
+            else:
+                self.possible.append(p)
+        self.children_possible = [x for x in self.children_possible if x[0] in self.possible]
+        for i, ch in enumerate(self.children):
+            pos = []
+            for cp in self.children_possible:
+                for op in cp[1]:
+                    if op[1] == i and op[0] not in pos:
+                        pos.append(op[0])
+            ch.filter_align(pos)
+        if len(self.possible) > 1:
+            print(self)
     def iterchildren(self):
         if len(self.children) == 0:
             yield self
         else:
             for ch in self.children:
                 yield from ch.iterchildren()
+    def suggest_rules(self, idx, words):
+        self.idx = idx
+        for i, ch in enumerate(self.children):
+            ch.suggest_rules(idx + [i], words)
+        if not self.children:
+            return
+        if not self.stags and not self.ttags:
+            return
+        pos_tag = (self.stags + self.ttags)[0]
+        child_tags = [(x.stags + x.ttags or [''])[0] for x in self.children]
+        # TODO:
+        # - compute reordering
+        # -- need to deal with what level to put inserted words on
+        # --- maybe try all and rely on majority
+        # --- or at highest node?
+        # --- initial insertion hard to track
+        # - pass to Rule
+        # - Rule handles suggestions
+        # -- Rule with 0 suggestions -> warning, use input order
+        # -- Rule with 1 distinct suggestion -> done
+        # -- Rule with >1 suggestions
+        # --- maybe try to resolve? - possibly too complicated
+        # --- emit warning about conflicting sentences and go with majority?
+        # -------------
+        # - encode rule id (output-intput joined with _?) in node lemma
+        # - align() attaches the node to the corresponding rule
+        # - loop back and forth between trees and rules
+        # -- if a rule can be selected, delete conflicting alignments
+        # --- what about gridlock?
+        # ---- alert user and just go with majority?
 
 def read_rules(fname):
     f = open(fname)
@@ -149,7 +209,7 @@ def generate_file(fname):
     for name, pat in sorted(Pattern.all_patterns.items()):
         f.write(str(pat) + '\n')
     f.write('\n\n')
-    for rule in Rule.all_rules:
+    for name, rule in sorted(Rule.all_rules.items()):
         f.write(str(rule) + '\n\n')
     f.close()
 
@@ -200,10 +260,11 @@ def align_corpus(trees, lexfile):
     f.close()
     pairs = []
     for tr, lx in zip(trees, lexlines):
-        pairs.append((parse_tree('^root{' + tr + '}$'), parse_tree('^root{' + lx + '}$')))
-    for a, b in pairs:
+        pairs.append((parse_tree('^root{ ' + tr + ' }$'), parse_tree('^root{' + lx + '}$')))
+    for i, (a, b) in enumerate(pairs):
         ls = list(range(len(b.children)))
         sets = []
+        print('---------------------')
         while ls:
             n = ls.pop()
             sets.append([n] + [x for x in ls if b.children[x].equiv(b.children[n])])
@@ -214,12 +275,17 @@ def align_corpus(trees, lexfile):
                 for s in st:
                     b.children[s].skippable = True
         al = a.align(b.children)
-        print(str(a))
-        print(str(b))
+        a.filter_align(al)
+        a.suggest_rules([i], b.children)
         print(al)
+        print(a)
+        print(b)
 
 if __name__ == '__main__':
     import sys
-    read_rules(sys.argv[1])
-    generate_file(sys.argv[2])
-    align_corpus(get_trees(sys.argv[2], sys.argv[3]), sys.argv[4])
+    if len(sys.argv) != 5:
+        print('%s cfg_rules rtx_filename sl_text tl_analyzed')
+    else:
+        read_rules(sys.argv[1])
+        generate_file(sys.argv[2])
+        align_corpus(get_trees(sys.argv[2], sys.argv[3]), sys.argv[4])
