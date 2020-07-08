@@ -30,14 +30,14 @@ def generate_file(fname):
     f.close()
 
 def align_corpus(sens):
-    for i, (a, b) in enumerate(sens):
+    for i, sn in enumerate(sens.sens):
         print('---------------------')
-        al = a.align(b.children)
-        a.filter_align(al)
-        a.suggest_rules([i], b.children)
+        al = sn.sl.align_tree_to_flat(sn.tl.children)
+        sn.sl.filter_align(al)
+        sn.sl.suggest_rules([i], sn.tl.children)
         print(al)
-        print(a)
-        print(b)
+        print(sn.sl)
+        print(sn.tl)
 
 if __name__ == '__main__':
     import corpus
@@ -47,7 +47,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     read_rules(args.cfg_rules)
     generate_file(args.rtx_file)
-    binfile = open('whatever.bin', 'wb')#tempfile.NamedTemporaryFile()
+    binfile = tempfile.NamedTemporaryFile()
     subprocess.run(['rtx-comp', args.rtx_file, binfile.name])
-    sens = corpus.get_corpus(args, binfile.name)
+    sens = corpus.get_corpus(args)
+    for sen in sens.sens:
+        print(sen.sl)
+    print('+++++++++++++++++++++++++++++')
+    sens.re_tree(binfile.name)
     align_corpus(sens)

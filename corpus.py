@@ -25,48 +25,6 @@ def make_corpus_argparse(description):
     parser.add_argument('-f', '--full-tags', action='append', help='align a part of speech based on full analysis rather than just lemma and first tag, e.g. -f prn')
     return parser
 
-def parse_tree(line):
-    assert(line[0] == '^')
-    assert(line[-1] == '$')
-    loc = line.find('{')
-    children = []
-    label = line[1:loc]
-    if loc != -1:
-        sub = line[loc:-2]
-        n = 0
-        l = 0
-        for i, c in enumerate(sub):
-            if c == '^':
-                if n == 0:
-                    l = i
-                n += 1
-            elif c == '$':
-                n -= 1
-                if n == 0:
-                    children.append(parse_tree(sub[l:i+1]))
-    ls = label.split('/')
-    sl = ''
-    tl = ''
-    if len(ls) == 1:
-        tl = ls[0]
-    else:
-        sl = ls[0]
-        tl = ls[1]
-    slem, stags = sl.split('<', 1) if '<' in sl else (sl, '')
-    tlem, ttags = tl.split('<', 1) if '<' in tl else (tl, '')
-    return LU(slem.lower(), stags.strip('<>').split('><'),
-              tlem.lower(), ttags.strip('<>').split('><'),
-              children)
-
-def parse_file(file, sep='\n'):
-    file.seek(0)
-    ret = []
-    txt = file.read()
-    ls = txt.split(sep)
-    for line in ls:
-        ret.append(parse_tree('^root{ ' + line.strip() + ' }$'))
-    return ret
-
 def tokenize(an_file, tok_file, full_tags):
     tok_to_id = {}
     id_to_tok = []
@@ -120,11 +78,12 @@ def eflomal_ize(sl_file, tl_file, full_tags):
         dct = {}
         for nums in line.split():
             sl, tl = nums.split('-')
-            dct[int(sl)] = int(tl)
+            dct[int(sl)] = [int(tl)]
         ret.append(dct)
     return ret
 
 def biltrans_align(sl, tl):
+    ret = {}
     # segment tl words into equivalence classes
     ls = list(range(len(tl.children)))
     sets = []
@@ -146,11 +105,13 @@ def biltrans_align(sl, tl):
             for s in st:
                 tl.children[s].skippable = True
             possible.append((-1, -1))
-        for ch in sl.iterchildren():
+        for i, ch in enumerate(sl.iterchildren()):
             if ch.equiv(tl.children[st[0]]):
                 ch.possible = possible
+                ret[i] = [x[0] for x in possible]
+    return ret
 
-def get_corpus(args, rtx_bin_filename=None):
+def get_corpus(args):
     sl_text = NamedTemporaryFile('w+')
     tl_text = NamedTemporaryFile('w+')
     sl_an = NamedTemporaryFile('w+')
@@ -217,25 +178,11 @@ def get_corpus(args, rtx_bin_filename=None):
     subprocess.run(tl_cmd)
 
     tl_lus = parse_file(tl_an)
-    sl_lus = []
-    if rtx_bin_filename:
-        sl_an.seek(0)
-        tree_input = NamedTemporaryFile('w+')
-        for line in sl_an:
-            tree_input.write(line + '\0')
-        tree_input.seek(0)
-        tree_output = NamedTemporaryFile('w+')
-        tree_output.seek(0)
-        subprocess.run(['rtx-proc', '-z', '-T', '-m', 'flat', rtx_bin_filename, tree_input.name, tree_output.name])
-        sl_lus = parse_file(tree_output, sep='\n')
-        # this should be sep='\0', but although \0 keeps things separate
-        # so we'll just have to hope that's sufficient
-        # TODO: figure this out later
-    else:
-        sl_lus = parse_file(sl_an)
+    sl_lus = parse_file(sl_an)
+    align = []
     if args.no_eflomal:
         for s, t in zip(sl_lus, tl_lus):
-            biltrans_align(s, t)
+            align.append(biltrans_align(s, t))
     if not args.no_eflomal:
         align = eflomal_ize(sl_an, tl_an, args.full_tags or [])
         for tree, flat, alg in zip(sl_lus, tl_lus, align):
@@ -243,4 +190,7 @@ def get_corpus(args, rtx_bin_filename=None):
             for i, w in enumerate(flat.children):
                 if i not in alg.values():
                     w.skippable = True
-    return list(zip(sl_lus, tl_lus))
+    sens = []
+    for sl, tl, alg in zip(sl_lus, tl_lus, align):
+        sens.append(Sentence(sl, tl, alg))
+    return Corpus(sens)

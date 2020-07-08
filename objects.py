@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from typing import List, Tuple, Optional, Dict
 import itertools
+import subprocess
+import tempfile
 
 class Attribute:
     all_attrs = {}
@@ -86,6 +88,12 @@ class LU:
         if sl and tl:
             sl += '/'
         return '^%s%s{ %s }%s$' % (sl, tl, ' '.join(map(str, self.children)), self.possible)
+    def stream(self) -> str:
+        sl = self.slem + ''.join('<%s>' % x for x in self.stags)
+        tl = self.tlem + ''.join('<%s>' % x for x in self.ttags)
+        if sl and tl:
+            sl += '/'
+        return '^' + sl + tl + '$'
     def equiv(self, other):
         if self.tlem != other.tlem:
             return False
@@ -94,15 +102,15 @@ class LU:
         if self.ttags and other.ttags and self.ttags[0] == other.ttags[0]:
             return True
         return False
-    def assign_alignment(self, align: Dict[int, int], index: Optional[int] = 0) -> int:
+    def assign_alignment(self, align: Dict[int, List[int]], index: Optional[int] = 0) -> int:
         '''set self.possible based on output of word aligner
-        align is {source_index: target_index}
+        align is {source_index: [target_indecies]}
         index is the source index of this node or its left-most terminal descendant
         returns: own source index or that or right-most terminal descendant
         '''
         if len(self.children) == 0:
             if index in align:
-                self.possible = [(align[index], align[index])]
+                self.possible = [(x, x) for x in align[index]]
             else:
                 self.skippable = True
             return index
@@ -111,7 +119,7 @@ class LU:
             for ch in self.children:
                 n = ch.assign_alignment(align, n+1)
             return n
-    def align(self, words: List["LU"]):
+    def align_tree_to_flat(self, words: List["LU"]):
         if len(self.possible) > 0:
             return self.possible
         ret = []
@@ -124,7 +132,7 @@ class LU:
         else:
             ops = []
             for i, ch in enumerate(self.children):
-                ls = [(a,i) for a in ch.align(words)]
+                ls = [(a,i) for a in ch.align_tree_to_flat(words)]
                 if ls or len(ch.children) > 0:
                     ops.append(ls)
             for op in itertools.product(*ops):
@@ -205,10 +213,76 @@ class LU:
         # -- if a rule can be selected, delete conflicting alignments
         # --- what about gridlock?
         # ---- alert user and just go with majority?
+    def possible_constituents(self, tl: List["LU"]) -> List[Tuple["LU", "LU"]]:
+        if len(self.children) < 2:
+            return []
+
+def parse_tree(line: str) -> LU:
+    assert(line[0] == '^')
+    assert(line[-1] == '$')
+    loc = line.find('{')
+    children = []
+    label = line[1:loc]
+    if loc != -1:
+        sub = line[loc:-2]
+        n = 0
+        l = 0
+        for i, c in enumerate(sub):
+            if c == '^':
+                if n == 0:
+                    l = i
+                n += 1
+            elif c == '$':
+                n -= 1
+                if n == 0:
+                    children.append(parse_tree(sub[l:i+1]))
+    ls = label.split('/')
+    sl = ''
+    tl = ''
+    if len(ls) == 1:
+        tl = ls[0]
+    else:
+        sl = ls[0]
+        tl = ls[1]
+    slem, stags = sl.split('<', 1) if '<' in sl else (sl, '')
+    tlem, ttags = tl.split('<', 1) if '<' in tl else (tl, '')
+    return LU(slem.lower(), stags.strip('<>').split('><'),
+              tlem.lower(), ttags.strip('<>').split('><'),
+              children)
+
+def parse_file(file, sep='\n') -> List[LU]:
+    file.seek(0)
+    ret = []
+    txt = file.read()
+    ls = txt.split(sep)
+    for line in ls:
+        ret.append(parse_tree('^root{ ' + line.strip() + ' }$'))
+    return ret
 
 class Sentence:
-    def __init__(self, sltext, tltext):
-        pass
+    def __init__(self, sl: LU, tl: LU, align: Optional[Dict[int, List[int]]] = None):
+        self.sl = sl
+        self.tl = tl
+        self.align = align
+        if self.align:
+            self.sl.assign_alignment(align)
+    def source_text(self) -> str:
+        return ' '.join(l.stream() for l in self.sl.iterchildren())
+    def update_sl(self, new_sl: LU):
+        self.sl = new_sl
+        if self.align:
+            self.sl.assign_alignment(self.align)
 
-
-
+class Corpus:
+    def __init__(self, sens: List[Sentence]):
+        self.sens: List[Sentence] = sens
+    def re_tree(self, rtx_bin_filename: str):
+        txt = '\n\0'.join(s.source_text() for s in self.sens)
+        proc = subprocess.run(['rtx-proc', '-z', '-T', '-m', 'flat', rtx_bin_filename],
+                              input=txt, encoding='utf-8', stdout=subprocess.PIPE)
+        for sen, line in zip(self.sens, proc.stdout.splitlines()):
+            sen.update_sl(parse_tree('^root{ ' + line.strip() + ' }$'))
+        # for some reason rtx-proc -z isn't outputting \0
+        # fortunately \n is always the last character in the block
+        # so it never gets moved around
+        # TODO: probably some sort of bug in rtx-proc
