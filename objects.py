@@ -3,15 +3,7 @@ from typing import List, Tuple, Optional, Dict, Union
 import itertools
 import subprocess
 import tempfile
-
-class Attribute:
-    all_attrs = {}
-    def __init__(self, name: str, values: List[str]):
-        self.name = name
-        self.values = values
-        Attribute.all_attrs[name] = self
-    def __str__(self):
-        return '%s = %s;' % (self.name, ' '.join(self.values))
+from tags import Attribute
 
 class Pattern:
     all_patterns = {}
@@ -54,7 +46,7 @@ class InputNode:
         return ret + '.'.join(self.tags + ['$' + c for c in self.clips])
 
 class OutputNode:
-    def __init__(self, source: int, clips: Map[str, Union[Clip, str]]):
+    def __init__(self, source: int, clips: Dict[str, Union[Clip, str]]):
         self.source = source
         self.clips = clips
         self.value = ''

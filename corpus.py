@@ -18,7 +18,7 @@ def make_corpus_argparse(description):
     parser.add_argument('-s', '--sl-corpus', help='source language corpus file')
     parser.add_argument('-t', '--tl-corpus', help='target language corpus file')
     parser.add_argument('-sep', '--separator', help='divider between source and target sentences if using a bilingual corpus (default |||)', default='|||')
-    parser.add_arugment('-a', '--aligner', help='what program to use for word-alignment', choices=['eflomal', 'biltrans'], default='eflomal')
+    parser.add_argument('-a', '--aligner', help='what program to use for word-alignment', choices=['eflomal', 'biltrans'], default='eflomal')
     #parser.add_argument('-b', '--biltrans-suggestions', help='file to write possible bilingual dictionary entries to')
     parser.add_argument('-f', '--full-tags', action='append', help='align a part of speech based on full analysis rather than just lemma and first tag, e.g. -f prn')
     return parser
@@ -163,7 +163,7 @@ def get_corpus(args):
         cmd_base += ['-d', args.pair_path]
 
     sl_cmd = cmd_base[:]
-    if args.no_biltrans:
+    if args.aligner != 'biltrans':
         sl_cmd += [args.src_lang + '-' + args.trg_lang + '-pretransfer']
     else:
         sl_cmd += [args.src_lang + '-' + args.trg_lang + '-biltrans']

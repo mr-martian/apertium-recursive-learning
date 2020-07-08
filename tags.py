@@ -4,6 +4,7 @@ import requests
 import html
 import json
 import os
+from typing import List
 
 TAG_DATA_FILE = os.path.split(os.path.abspath(__file__))[0] + '/tags.json'
 
@@ -74,6 +75,36 @@ def lookup_tag(tag):
     if len(tag_to_category) == 0:
         load_tags()
     return tag_to_category.get(tag)
+
+class Attribute:
+    all_attrs = {}
+    def __init__(self, name: str, values: List[str]):
+        self.name = name
+        self.values = values
+        Attribute.all_attrs[name] = self
+    def __str__(self):
+        return '%s = %s;' % (self.name, ' '.join(self.values))
+    def lookup(tag: str):
+        if len(Attribute.all_attrs) == 0:
+            Attribute.load_all()
+        return Attribute.all_attrs.get(lookup_tag(tag))
+    def load_all():
+        global category_to_tag
+        if len(category_to_tag) == 0:
+            load_tags()
+        def iter_tags(dct, key):
+            ls = []
+            for tag in dct:
+                if isinstance(dct[tag], str):
+                    ls.append(tag)
+                else:
+                    iter_tags(dct[tag], tag)
+            if ls:
+                if key in Attribute.all_attrs:
+                    Attribute.all_attrs[key].values += ls
+                else:
+                    Attribute(key, ls)
+        iter_tags(category_to_tag, '')
 
 if __name__ == '__main__':
     scrape_tags()
