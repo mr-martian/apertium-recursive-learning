@@ -18,9 +18,7 @@ def make_corpus_argparse(description):
     parser.add_argument('-s', '--sl-corpus', help='source language corpus file')
     parser.add_argument('-t', '--tl-corpus', help='target language corpus file')
     parser.add_argument('-sep', '--separator', help='divider between source and target sentences if using a bilingual corpus (default |||)', default='|||')
-    aligner = parser.add_mutually_exclusive_group()
-    aligner.add_argument('-E', '--no-eflomal', help="don't use eflomal for aligning", action='store_true')
-    aligner.add_argument('-B', '--no-biltrans', help="don't use biltrans for aligning", action='store_true')
+    parser.add_arugment('-a', '--aligner', help='what program to use for word-alignment', choices=['eflomal', 'biltrans'], default='eflomal')
     #parser.add_argument('-b', '--biltrans-suggestions', help='file to write possible bilingual dictionary entries to')
     parser.add_argument('-f', '--full-tags', action='append', help='align a part of speech based on full analysis rather than just lemma and first tag, e.g. -f prn')
     return parser
@@ -67,8 +65,7 @@ def eflomal_ize(sl_file, tl_file, full_tags):
     defaults = ['-m', '3', '-n', '1', '-N', '0.2']
     iters = max(2, int(round(5000.0 / math.sqrt(n))))
     iters4 = max(1, iters//4)
-    n_iters = (max(2, iters4), iters4, iters)
-    defaults += ['-1', str(n_iters[0]), '-2', str(n_iters[1]), '-3', str(n_iters[2])]
+    defaults += ['-1', str(max(2, iters4)), '-2', str(iters4), '-3', str(iters)]
 
     subprocess.run(['eflomal', '-s', sl_nums.name, '-t', tl_nums.name,
                     '-f', align.name, '-q'] + defaults)
@@ -180,16 +177,18 @@ def get_corpus(args):
     tl_lus = parse_file(tl_an)
     sl_lus = parse_file(sl_an)
     align = []
-    if args.no_eflomal:
+    if args.aligner == 'biltrans':
         for s, t in zip(sl_lus, tl_lus):
             align.append(biltrans_align(s, t))
-    if not args.no_eflomal:
+    elif args.aligner == 'eflomal':
         align = eflomal_ize(sl_an, tl_an, args.full_tags or [])
         for tree, flat, alg in zip(sl_lus, tl_lus, align):
             tree.assign_alignment(alg)
             for i, w in enumerate(flat.children):
                 if i not in alg.values():
                     w.skippable = True
+    else:
+        align = [None]*len(sl_lus)
     sens = []
     for sl, tl, alg in zip(sl_lus, tl_lus, align):
         sens.append(Sentence(sl, tl, alg))

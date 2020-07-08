@@ -111,6 +111,8 @@ class LU:
         if len(self.children) == 0:
             if index in align:
                 self.possible = [(x, x) for x in align[index]]
+                if (-1,-1) in self.possible:
+                    self.skippable = True
             else:
                 self.skippable = True
             return index
@@ -213,9 +215,43 @@ class LU:
         # -- if a rule can be selected, delete conflicting alignments
         # --- what about gridlock?
         # ---- alert user and just go with majority?
+    def match_surface(self) -> Tuple[str, List[str]]:
+        if len(self.children) > 0:
+            return (self.tlem, self.ttags)
+        else:
+            return (self.slem, self.stags)
     def possible_constituents(self, tl: List["LU"]) -> List[Tuple["LU", "LU"]]:
         if len(self.children) < 2:
             return []
+        ret: List[Tuple["LU", "LU"]] = []
+        for i, ch in enumerate(self.children):
+            if i == 0:
+                continue
+            prev = self.children[i-1]
+            if prev.skippable or ch.skippable:
+                ret.append((prev, ch))
+                continue
+            for lpos in prev.possible:
+                if lpos == (-1, -1):
+                    ret.append((prev, ch))
+                    break
+                for rpos in ch.possible:
+                    if rpos == (-1, -1):
+                        ret.append((prev, ch))
+                        break
+                    gapl = 0
+                    gapr = 0
+                    if lpos[0] > rpos[1]: # prev moves to the right of ch in tl
+                        gapl = rpos[1] + 1
+                        gapr = lpos[0]
+                    elif lpos[1] < rpos[0]: # order is maintained in tl
+                        gapl = lpos[1] + 1
+                        gapr = rpos[0]
+                    else: # overlap - not a constituent
+                        continue
+                    if gapl <= gapr and all(x.skippable for x in tl[gapl:gapr]):
+                        ret.append((prev, ch))
+        return ret
 
 def parse_tree(line: str) -> LU:
     assert(line[0] == '^')
