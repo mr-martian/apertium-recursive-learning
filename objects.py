@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Union
 import itertools
 import subprocess
 import tempfile
@@ -26,26 +26,40 @@ class Pattern:
             tg = '.' + tg
         return f'{self.pos_tag}: _{tg};'
 
+class Clip:
+    def __init__(self, pos: int, attr: str, val: Optional[Union[str, "Clip"]] = None):
+        self.pos = pos
+        self.attr = attr
+        self.val = val
+    def __str__(self):
+        ret = ''
+        if self.pos == 0:
+            ret += '$'
+        else:
+            ret += str(self.pos) + '.'
+        ret += self.attr
+        if self.val:
+            ret += '=' + str(self.val)
+        return ret
+
 class InputNode:
     def __init__(self, tags: Optional[List[str]],
+                       lemma: Optional[str] = '',
                        clips: Optional[List[str]] = None):
+        self.lemma = lemma
         self.tags = tags
         self.clips = clips or []
     def __str__(self):
-        return '.'.join(self.tags + ['$' + c for c in self.clips])
+        ret = self.lemma + '@' if self.lemma else ''
+        return ret + '.'.join(self.tags + ['$' + c for c in self.clips])
 
 class OutputNode:
-    def __init__(self, source: int, clips: List[Tuple[int, str]]):
+    def __init__(self, source: int, clips: Map[str, Union[Clip, str]]):
         self.source = source
         self.clips = clips
         self.value = ''
     def __str__(self):
-        args = []
-        for name, src in self.clips:
-            if src == 0:
-                args.append(f'{name}=${name}')
-            else:
-                args.append(f'{name}={src}.{name}')
+        args = ['%s=%s' % (name, self.clips[name]) for name in self.clips]
         s = ', '.join(args)
         if s:
             s = '[' + s + ']'
@@ -94,7 +108,7 @@ class LU:
         if sl and tl:
             sl += '/'
         return '^' + sl + tl + '$'
-    def equiv(self, other):
+    def equiv(self, other: "LU"):
         if self.tlem != other.tlem:
             return False
         if self.ttags == [] and other.ttags == []:
@@ -102,6 +116,26 @@ class LU:
         if self.ttags and other.ttags and self.ttags[0] == other.ttags[0]:
             return True
         return False
+    def compatible(self, node: InputNode):
+        chunk = (len(self.children) > 0)
+        if node.lemma:
+            if (chunk and self.tlem != node.lemma) or (not chunk and self.slem != node.lemma):
+                return False
+        def compare_tags(tags: List[str], pat: List[str]):
+            if len(pat) == 0:
+                return True
+            elif pat[0] == '*':
+                return any(compare_tags(tags[n:], pat[1:]) for n in range(len(tags)))
+            elif len(tags) == 0:
+                return False
+            elif tags[0] == pat[0]:
+                return compare_tags(tags[1:], pat[1:])
+            else:
+                return False
+        if chunk:
+            return compare_tags(self.ttags, node.tags)
+        else:
+            return compare_tags(self.stags, node.tags)
     def assign_alignment(self, align: Dict[int, List[int]], index: Optional[int] = 0) -> int:
         '''set self.possible based on output of word aligner
         align is {source_index: [target_indecies]}
