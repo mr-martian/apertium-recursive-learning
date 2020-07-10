@@ -11,8 +11,8 @@ def make_corpus_argparse(description):
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('src_lang', help='language to translate from')
     parser.add_argument('trg_lang', help='language to translate to')
-    #parser.add_argument('-sp', '--source-path', help='path to directory of source analyzer')
-    #parser.add_argument('-tp', '--target-path', help='path to directory of target analyzer')
+    parser.add_argument('-sp', '--source-path', help='path to directory of source analyzer')
+    parser.add_argument('-tp', '--target-path', help='path to directory of target analyzer')
     parser.add_argument('-pp', '--pair-path', help='path to directory of bilingual data')
     parser.add_argument('-c', '--corpus', help='bilingual corpus file')
     parser.add_argument('-s', '--sl-corpus', help='source language corpus file')
@@ -108,6 +108,31 @@ def biltrans_align(sl, tl):
                 ret[i] = [x[0] for x in possible]
     return ret
 
+def analyze(args, side, infilename, outfilename):
+    using_mono = (not args.pair_path and (args.source_path or args.target_path))
+    cmd = ['apertium', '-f', 'none']
+    if args.pair_path:
+        cmd += ['-d', args.pair_path]
+    elif using_mono and side == 'source' and args.source_path:
+        cmd += ['-d', args.source_path]
+    elif using_mono and side == 'target' and args.target_path:
+        cmd += ['-d', args.target_path]
+    lang = (args.src_lang if side == 'source' else args.trg_lang)
+    if not using_mono:
+        lang += '-' + (args.trg_lang if side == 'source' else args.src_lang)
+        if args.aligner == 'biltrans' and side == 'source':
+            lang += '-biltrans'
+        else:
+            lang += '-pretransfer'
+        subprocess.run(cmd + [lang, infilename, outfilename])
+    else:
+        lang += '-tagger'
+        # TODO: what happens if someone does --aligner=biltrans with monolinguals?
+        tmp = NamedTemporaryFile('w+')
+        tmp.seek(0)
+        subprocess.run(cmd + [lang, infilename, tmp.name])
+        subprocess.run(['apertium-pretransfer', tmp.name, outfilename])
+
 def get_corpus(args):
     sl_text = NamedTemporaryFile('w+')
     tl_text = NamedTemporaryFile('w+')
@@ -155,24 +180,10 @@ def get_corpus(args):
     sl_text.seek(0)
     tl_text.seek(0)
 
-    # TODO: use monolinguals / avoid trimming
     # TODO: suggest bidix entries
 
-    cmd_base = ['apertium', '-f', 'none']
-    if args.pair_path:
-        cmd_base += ['-d', args.pair_path]
-
-    sl_cmd = cmd_base[:]
-    if args.aligner != 'biltrans':
-        sl_cmd += [args.src_lang + '-' + args.trg_lang + '-pretransfer']
-    else:
-        sl_cmd += [args.src_lang + '-' + args.trg_lang + '-biltrans']
-    sl_cmd += [sl_text.name, sl_an.name]
-    subprocess.run(sl_cmd)
-
-    tl_cmd = cmd_base[:] + [args.trg_lang + '-' + args.src_lang + '-pretransfer']
-    tl_cmd += [tl_text.name, tl_an.name]
-    subprocess.run(tl_cmd)
+    analyze(args, 'source', sl_text.name, sl_an.name)
+    analyze(args, 'target', tl_text.name, tl_an.name)
 
     tl_lus = parse_file(tl_an)
     sl_lus = parse_file(sl_an)
