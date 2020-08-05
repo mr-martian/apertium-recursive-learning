@@ -16,3 +16,9 @@ http://papers.nips.cc/paper/2467-unsupervised-context-sensitive-language-acquisi
 Solan et al. 2004
 Unsupervised context sensitive language acquisition from a large corpus
 - full description of ADIOS algorithm
+
+http://kybele.psych.cornell.edu/~edelman/BUCLD-Berant-etal3.pdf
+Berant et al. 2007
+Boosting Unsupervised Grammar Induction by Splitting Complex Sentences on Function Words
+- a much clearer description of how to find equivalence classes
+- has some interesting suggestions about improving performance of ADIOS by breaking up longer sentences
