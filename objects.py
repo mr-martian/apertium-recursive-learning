@@ -71,6 +71,35 @@ class Rule:
         outs = ' _ '.join(map(str, self.outputs))
         return '%s -> %s [$lem=%s] { %s } ;' % (self.parent, ins, self.name, outs)
         # TODO: don't want [$lem] in final output
+    def overlap(self, other: "Rule") -> bool:
+        '''determine whether there exists a sequence of tokens which
+        both self and other could match part of'''
+        for i, o in enumerate(other.inputs):
+            if o.tags[0] == self.inputs[0].tags[0]:
+                if all(a.tags[0] == b.tags[0] for a,b in zip(other.inputs[i+1:], self.inputs[1:])):
+                    return True
+        for i, inp in enumerate(self.inputs[1:], 1):
+            if inp.tags[0] == other.inputs[0].tags[0]:
+                if all(a.tags[0] == b.tags[0] for a,b in zip(other.inputs[1:], self.inputs[i+1:])):
+                    return True
+        return False
+
+def generate_rule_file(fname: str, rules: Optional[List[Rule]] = None):
+    for rl in (rules or Rule.all_rules.values()):
+        if rl.parent not in Pattern.all_patterns:
+            Pattern(rl.parent)
+        for inp in rl.inputs:
+            if inp.tags[0] not in Pattern.all_patterns:
+                Pattern(inp.tags[0])
+    with open(fname, 'w') as f:
+        for name, attr in sorted(Attribute.all_attrs.items()):
+            f.write(str(attr) + '\n')
+        f.write('\n\n')
+        for name, pat in sorted(Pattern.all_patterns.items()):
+            f.write(str(pat) + '\n')
+        f.write('\n\n')
+        for rule in (rules or sorted(Rule.all_rules.values())):
+            f.write(str(rule) + '\n\n')
 
 class LU:
     def __init__(self, slem: str, stags: List[str], tlem: str, ttags: List[str], children):
@@ -151,7 +180,7 @@ class LU:
         if len(self.possible) > 0:
             return self.possible
         ret = []
-        if len(self.children) == 0:
+        if len(self.children) == 0 and not self.skippable:
             for i, w in enumerate(words):
                 if self.equiv(w):
                     ret.append((i, i))
@@ -246,40 +275,56 @@ class LU:
             return (self.tlem, self.ttags)
         else:
             return (self.slem, self.stags)
-    def possible_constituents(self, tl: List["LU"]) -> List[Tuple["LU", "LU"]]:
+    def possible_constituents(self, tl: List["LU"]) -> List[Tuple[Tuple[int, int], bool]]:
+        '''find all adjacent pairs in self (sl) which are either not aligned
+        or are aligned with an adjacent pair in tl
+        returns sl indecies'''
         if len(self.children) < 2:
             return []
-        ret: List[Tuple["LU", "LU"]] = []
+        ret: List[Tuple[Tuple[Tuple[int, int], bool]]] = []
         for i, ch in enumerate(self.children):
             if i == 0:
                 continue
             prev = self.children[i-1]
             if prev.skippable or ch.skippable:
-                ret.append((prev, ch))
+                ret.append(((i-1, i), False))
                 continue
             for lpos in prev.possible:
                 if lpos == (-1, -1):
-                    ret.append((prev, ch))
+                    ret.append(((i-1, i), False))
                     break
                 for rpos in ch.possible:
                     if rpos == (-1, -1):
-                        ret.append((prev, ch))
+                        ret.append(((i-1, i), False))
                         break
                     gapl = 0
                     gapr = 0
+                    flip = False
                     if lpos[0] > rpos[1]: # prev moves to the right of ch in tl
                         gapl = rpos[1] + 1
                         gapr = lpos[0]
+                        flip = True
                     elif lpos[1] < rpos[0]: # order is maintained in tl
                         gapl = lpos[1] + 1
                         gapr = rpos[0]
                     else: # overlap - not a constituent
                         continue
-                    if gapl <= gapr and all(x.skippable for x in tl[gapl:gapr]):
-                        ret.append((prev, ch))
+                    if gapl <= gapr and all(x.skippable for x in tl.children[gapl:gapr]):
+                        ret.append(((i-1, i), flip))
+        return ret
+    def possible_applications(self, rl: Rule) -> List[Tuple[int, ...]]:
+        '''return every range over which rl could apply'''
+        starts = [i for i, ch in enumerate(self.children) if ch.compatible(rl.inputs[0])]
+        ret = []
+        for s in starts:
+            for i, inp in enumerate(rl.inputs[1:], 1):
+                if i+s >= len(self.children) or not self.children[i+s].compatible(inp):
+                    break
+            else:
+                ret.append(tuple(range(s, s+len(rl.inputs))))
         return ret
 
-def parse_tree(line: str) -> LU:
+def parse_tree(line: str, side: str = 'both') -> LU:
     assert(line[0] == '^')
     assert(line[-1] == '$')
     loc = line.find('{')
@@ -297,28 +342,37 @@ def parse_tree(line: str) -> LU:
             elif c == '$':
                 n -= 1
                 if n == 0:
-                    children.append(parse_tree(sub[l:i+1]))
+                    children.append(parse_tree(sub[l:i+1], side))
     ls = label.split('/')
     sl = ''
     tl = ''
-    if len(ls) == 1:
-        tl = ls[0]
+    if side == 'both':
+        if len(ls) == 1:
+            tl = ls[0]
+        else:
+            sl = ls[0]
+            tl = ls[1]
     else:
-        sl = ls[0]
-        tl = ls[1]
+        idx = 1
+        if len(ls) == 1 or '<' in ls[0]:
+            idx = 0
+        if side == 'sl':
+            sl = ls[idx]
+        else:
+            tl = ls[idx]
     slem, stags = sl.split('<', 1) if '<' in sl else (sl, '')
     tlem, ttags = tl.split('<', 1) if '<' in tl else (tl, '')
     return LU(slem.lower(), stags.strip('<>').split('><'),
               tlem.lower(), ttags.strip('<>').split('><'),
               children)
 
-def parse_file(file, sep='\n') -> List[LU]:
+def parse_file(file, sep='\n', side: str = 'both') -> List[LU]:
     file.seek(0)
     ret = []
     txt = file.read()
     ls = txt.split(sep)
     for line in ls:
-        ret.append(parse_tree('^root{ ' + line.strip() + ' }$'))
+        ret.append(parse_tree('^root{ ' + line.strip() + ' }$', side))
     return ret
 
 class Sentence:
@@ -334,11 +388,12 @@ class Sentence:
         self.sl = new_sl
         if self.align:
             self.sl.assign_alignment(self.align)
+            self.sl.align_tree_to_flat(self.tl.children)
 
 class Corpus:
     def __init__(self, sens: List[Sentence]):
         self.sens: List[Sentence] = sens
-    def re_tree(self, rtx_bin_filename: str):
+    def retree(self, rtx_bin_filename: str):
         txt = '\n\0'.join(s.source_text() for s in self.sens)
         proc = subprocess.run(['rtx-proc', '-z', '-T', '-m', 'flat', rtx_bin_filename],
                               input=txt, encoding='utf-8', stdout=subprocess.PIPE)
@@ -348,3 +403,7 @@ class Corpus:
         # fortunately \n is always the last character in the block
         # so it never gets moved around
         # TODO: probably some sort of bug in rtx-proc
+    def compile_and_retree(self, rtx_filename: str):
+        binfile = tempfile.NamedTemporaryFile()
+        subprocess.run(['rtx-comp', rtx_filename, binfile.name])
+        self.retree(binfile.name)

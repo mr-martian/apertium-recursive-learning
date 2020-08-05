@@ -17,18 +17,6 @@ def read_rules(fname):
     for tag in pos_tags:
         Pattern(tag)
 
-def generate_file(fname):
-    f = open(fname, 'w')
-    for name, attr in sorted(Attribute.all_attrs.items()):
-        f.write(str(attr) + '\n')
-    f.write('\n\n')
-    for name, pat in sorted(Pattern.all_patterns.items()):
-        f.write(str(pat) + '\n')
-    f.write('\n\n')
-    for name, rule in sorted(Rule.all_rules.items()):
-        f.write(str(rule) + '\n\n')
-    f.close()
-
 def align_corpus(sens):
     for i, sn in enumerate(sens.sens):
         print('---------------------')
@@ -46,12 +34,10 @@ if __name__ == '__main__':
     parser.add_argument('rtx_file', help='file to write generated rules to')
     args = parser.parse_args()
     read_rules(args.cfg_rules)
-    generate_file(args.rtx_file)
-    binfile = tempfile.NamedTemporaryFile()
-    subprocess.run(['rtx-comp', args.rtx_file, binfile.name])
+    generate_rule_file(args.rtx_file)
     sens = corpus.get_corpus(args)
     for sen in sens.sens:
         print(sen.sl)
     print('+++++++++++++++++++++++++++++')
-    sens.re_tree(binfile.name)
+    sens.compile_and_retree(args.rtx_file)
     align_corpus(sens)

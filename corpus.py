@@ -185,8 +185,11 @@ def get_corpus(args):
     analyze(args, 'source', sl_text.name, sl_an.name)
     analyze(args, 'target', tl_text.name, tl_an.name)
 
-    tl_lus = parse_file(tl_an)
-    sl_lus = parse_file(sl_an)
+    tl_lus = parse_file(tl_an, side='tl')
+    if args.aligner == 'biltrans':
+        sl_lus = parse_file(sl_an, side='both')
+    else:
+        sl_lus = parse_file(sl_an, side='sl')
     align = []
     if args.aligner == 'biltrans':
         for s, t in zip(sl_lus, tl_lus):
