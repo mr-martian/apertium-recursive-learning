@@ -1,0 +1,18 @@
+http://adios.cs.tau.ac.il/papers/BUCLD-Edelman.pdf
+Edelman et al. 2005
+Learning Syntactic Constructions from Raw Corpora
+- some info about ADIOS
+
+https://github.com/SiyuanQi/madios
+- an implementation of ADIOS in C++
+- Zlib license
+
+https://www.aclweb.org/anthology/Y09-2025.pdf
+Edelman and Solan 2009
+Machine Translation Using Automatically Inferred Construction-Based Correspondence and Language Models
+- minimal description of using ADIOS for translation
+
+http://papers.nips.cc/paper/2467-unsupervised-context-sensitive-language-acquisition-from-a-large-corpus.pdf
+Solan et al. 2004
+Unsupervised context sensitive language acquisition from a large corpus
+- full description of ADIOS algorithm
