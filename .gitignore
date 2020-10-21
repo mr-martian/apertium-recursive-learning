@@ -127,3 +127,20 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+*.o
+*.in
+*.pc
+*Makefile
+src/.deps/*
+configure
+config.*
+src/auto_config.h*
+INSTALL
+aclocal.m4
+autom4te.cache/
+depcomp
+install-sh
+missing
+src/align-tree
+stamp-h1

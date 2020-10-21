@@ -1,0 +1,5 @@
+prefix=@prefix@
+
+Name: apertium-recursive-learning
+Description: Rule extractors for Apertium-recursive
+Version: @VERSION@
