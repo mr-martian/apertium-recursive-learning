@@ -8,6 +8,7 @@
 
 struct Node {
   int id;
+  int parent;
   bool isVirtual;
   bool isLeft;
   std::vector<int> children;
