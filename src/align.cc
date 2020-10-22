@@ -1,4 +1,6 @@
 #include "align.h"
+#include <map>
+#include <iostream>
 
 Yield
 getYield(int n, const Tree& nodes)
@@ -61,6 +63,15 @@ getHighest(const Yield& yl, const Tree& nodes)
   return ret;
 }
 
+int
+index(const std::vector<int>& vec, const int val)
+{
+  for(size_t i = 0; i < vec.size(); i++) {
+    if(vec[i] == val) return i;
+  }
+  return -1;
+}
+
 bool
 isContiguousSubset(std::vector<int>& ch, const Yield& rch)
 {
@@ -74,16 +85,70 @@ isContiguousSubset(std::vector<int>& ch, const Yield& rch)
     if(rch.find(it) == rch.end()) return false;
   }
   for(auto it : rch) {
-    bool found = false;
-    for(auto c : ch) {
-      if(c == it) {
-        found = true;
-        break;
-      }
-    }
-    if(!found) return false;
+    if(index(ch, it) == -1) return false;
   }
   return true;
+}
+
+bool
+splitSegments(const std::vector<std::pair<int, int>>& from, bool left,
+              std::vector<std::vector<std::pair<int, int>>>& to)
+{
+  size_t size_was = to.size();
+  std::set<size_t> unaligned;
+  std::map<int, size_t> locs;
+  for(size_t i = 0; i < from.size(); i++) {
+    if((left && from[i].first == -1) || (!left && from[i].second == -1)) {
+      unaligned.insert(i);
+    } else if(left) {
+      locs[from[i].first] = i;
+    } else {
+      locs[from[i].second] = i;
+    }
+  }
+  std::vector<std::pair<int, int>> extra;
+  for(auto it : unaligned) {
+    extra.push_back(from[it]);
+  }
+  bool changed = false;
+  int last = -2;
+  for(auto it : locs) {
+    if(it.first != last + 1) {
+      if(to.size() > size_was && to.back().size() - unaligned.size() < 2) {
+        to.pop_back();
+        changed = true;
+      }
+      to.push_back(std::vector<std::pair<int, int>>());
+      to.back().insert(to.back().begin(), extra.begin(), extra.end());
+    }
+    to.back().push_back(from[it.second]);
+    last = it.first;
+  }
+  if(to.size() > size_was && to.back().size() - unaligned.size() < 2) {
+    to.pop_back();
+    changed = true;
+  }
+  return changed || (to.size() > size_was + 1);
+}
+
+std::vector<std::vector<std::pair<int, int>>>
+findSegments(const std::vector<std::pair<int, int>>& links)
+{
+  std::vector<std::vector<std::pair<int, int>>> ret, temp;
+  ret.push_back(links);
+  while(!ret.empty()) {
+    bool changed = false;
+    for(auto& it : ret) {
+      changed = splitSegments(it, true, temp) || changed;
+    }
+    ret.clear();
+    for(auto& it : temp) {
+      changed = splitSegments(it, false, ret) || changed;
+    }
+    temp.clear();
+    if(!changed) break;
+  }
+  return ret;
 }
 
 void
@@ -126,6 +191,7 @@ getAlignments(std::vector<Node*>& nodes)
       rtodo.push_back(i);
     }
   }
+  std::vector<size_t> ltodo_partial, rtodo_partial;
   for(auto l : ltodo) {
     Yield rch_all; // all descendants of potential virtual node
     Yield rpar_all; // all ancestors of potential virtual node
@@ -148,8 +214,10 @@ getAlignments(std::vector<Node*>& nodes)
         v->align.insert(left[l].first);
         nodes.push_back(v);
         nodes[left[l].first]->align.insert(v->id);
+        continue;
       }
     }
+    ltodo_partial.push_back(l);
   }
   for(auto r : rtodo) {
     Yield lch_all; // all descendants of potential virtual node
@@ -173,6 +241,68 @@ getAlignments(std::vector<Node*>& nodes)
         v->align.insert(right[r].first);
         nodes.push_back(v);
         nodes[right[r].first]->align.insert(v->id);
+        continue;
+      }
+    }
+    rtodo_partial.push_back(r);
+  }
+  for(auto l : ltodo_partial) {
+    for(auto r : rtodo_partial) {
+      std::vector<std::pair<int, int>> links;
+      std::vector<int>& lch = nodes[left[l].first]->children;
+      std::vector<int>& rch = nodes[right[r].first]->children;
+      int real_link_count = 0;
+      for(size_t i = 0; i < lch.size(); i++) {
+        if(nodes[lch[i]]->align.empty() && nodes[lch[i]]->children.empty()) {
+          links.push_back(std::make_pair(i, -1));
+        } else {
+          for(auto it : nodes[lch[i]]->align) {
+            int loc = index(rch, it);
+            if(loc != -1) {
+              links.push_back(std::make_pair(i, loc));
+              real_link_count++;
+            }
+          }
+        }
+      }
+      for(size_t i = 0; i < rch.size(); i++) {
+        if(nodes[rch[i]]->align.empty() && nodes[rch[i]]->children.empty()) {
+          links.push_back(std::make_pair(-1, i));
+        }
+      }
+      if(real_link_count < 2) continue;
+      // don't create random virtual nodes for unaligned terminals
+      std::vector<std::vector<std::pair<int, int>>> segments = findSegments(links);
+      for(auto& seg : segments) {
+        int minl = lch.size(), maxl = -1, minr = rch.size(), maxr = -1;
+        for(auto& pr : seg) {
+          if(pr.first != -1) {
+            minl = (pr.first < minl ? pr.first : minl);
+            maxl = (pr.first > maxl ? pr.first : maxl);
+          }
+          if(pr.second != -1) {
+            minr = (pr.second < minr ? pr.second : minr);
+            maxr = (pr.second > maxr ? pr.second : maxr);
+          }
+        }
+        Node* vl = new Node;
+        vl->id = nodes.size();
+        vl->isLeft = true;
+        vl->isVirtual = true;
+        vl->parent = left[l].first;
+
+        Node* vr = new Node;
+        vr->id = nodes.size()+1;
+        vr->isLeft = false;
+        vr->isVirtual = true;
+        vr->parent = right[r].first;
+
+        vl->align.insert(vr->id);
+        vr->align.insert(vl->id);
+        vl->children.insert(vl->children.begin(), lch.begin()+minl, lch.begin()+maxl+1);
+        vr->children.insert(vr->children.begin(), rch.begin()+minr, rch.begin()+maxr+1);
+        nodes.push_back(vl);
+        nodes.push_back(vr);
       }
     }
   }
