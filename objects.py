@@ -397,12 +397,8 @@ class Corpus:
         txt = '\n\0'.join(s.source_text() for s in self.sens)
         proc = subprocess.run(['rtx-proc', '-z', '-T', '-m', 'flat', rtx_bin_filename],
                               input=txt, encoding='utf-8', stdout=subprocess.PIPE)
-        for sen, line in zip(self.sens, proc.stdout.splitlines()):
+        for sen, line in zip(self.sens, proc.stdout.split('\0')):
             sen.update_sl(parse_tree('^root{ ' + line.strip() + ' }$'))
-        # for some reason rtx-proc -z isn't outputting \0
-        # fortunately \n is always the last character in the block
-        # so it never gets moved around
-        # TODO: probably some sort of bug in rtx-proc
     def compile_and_retree(self, rtx_filename: str):
         binfile = tempfile.NamedTemporaryFile()
         subprocess.run(['rtx-comp', rtx_filename, binfile.name])
