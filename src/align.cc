@@ -114,19 +114,21 @@ splitSegments(const std::vector<std::pair<int, int>>& from, bool left,
   int last = -2;
   for(auto it : locs) {
     if(it.first != last + 1) {
-      if(to.size() > size_was && to.back().size() - unaligned.size() < 2) {
+      if(to.size() > size_was && to.back().size() < 2) {
         to.pop_back();
         changed = true;
       }
       to.push_back(std::vector<std::pair<int, int>>());
-      to.back().insert(to.back().begin(), extra.begin(), extra.end());
     }
     to.back().push_back(from[it.second]);
     last = it.first;
   }
-  if(to.size() > size_was && to.back().size() - unaligned.size() < 2) {
+  if(to.size() > size_was && to.back().size() < 2) {
     to.pop_back();
     changed = true;
+  }
+  for(size_t i = size_was; i < to.size(); i++) {
+    to[i].insert(to[i].end(), extra.begin(), extra.end());
   }
   return changed || (to.size() > size_was + 1);
 }
@@ -134,19 +136,31 @@ splitSegments(const std::vector<std::pair<int, int>>& from, bool left,
 std::vector<std::vector<std::pair<int, int>>>
 findSegments(const std::vector<std::pair<int, int>>& links)
 {
-  std::vector<std::vector<std::pair<int, int>>> ret, temp;
-  ret.push_back(links);
-  while(!ret.empty()) {
+  std::vector<std::vector<std::pair<int, int>>> temp1, temp2, ret;
+  temp1.push_back(links);
+  while(!temp1.empty()) {
     bool changed = false;
-    for(auto& it : ret) {
-      changed = splitSegments(it, true, temp) || changed;
+    for(auto& it : temp1) {
+      changed = splitSegments(it, true, temp2) || changed;
     }
-    ret.clear();
-    for(auto& it : temp) {
-      changed = splitSegments(it, false, ret) || changed;
+    temp1.clear();
+    for(auto& it : temp2) {
+      changed = splitSegments(it, false, temp1) || changed;
     }
-    temp.clear();
-    if(!changed) break;
+    temp2.clear();
+    if(!changed) {
+      ret.insert(ret.end(), temp1.begin(), temp1.end());
+      for(auto& it : temp1) {
+        if(it.size() > 2) {
+          for(size_t i = 0; i < it.size(); i++) {
+            temp2.push_back(it);
+            temp2.back().erase(temp2.back().begin()+i);
+          }
+        }
+      }
+      temp1.clear();
+      temp2.swap(temp1);
+    }
   }
   return ret;
 }
