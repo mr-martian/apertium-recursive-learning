@@ -12,6 +12,7 @@ class LU:
         self.tags = tags
         self.children = children
         self.align: List[int] = []
+        self.children_options: List[List[int]] = []
     def fromstring(s: str) -> "LU":
         assert(s[0] == '^')
         assert(s[-1] == '$')
@@ -89,6 +90,17 @@ class Rule:
             else:
                 out.append(self.inserts(o - len(self.pat)))
         return '%s -> %s { %s }' % (self.parent, ' '.join(self.pat), ' _ '.join(out))
+    def conflicts(self, other):
+        if self.pat != other.pat:
+            return False
+        if self.parent == other.parent and self.order == other.order and self.inserts == other.inserts:
+            return False
+        return True
+    def redundant(self, other):
+        return self.pat == other.pat and self.parent == other.parent and self.order == other.order and self.inserts == other.inserts
+
+def strls(ls: List[int]) -> str:
+    return ' '.join(map(str, ls))
 
 class Sentence:
     def __init__(self, sl: LU, tl: LU):
@@ -99,6 +111,8 @@ class Sentence:
         self.nodes = list(sl.iter()) + list(tl.iter())
         for i, n in enumerate(self.nodes):
             n.idx = i
+        for n in self.nodes:
+            n.children_options.append([x.idx for x in n.children])
     def printtree(self):
         return ' '.join(x.printtree(x.idx < self.tl.idx) for x in self.nodes)
     def addalignments(self, alg: str):
@@ -112,8 +126,10 @@ class Sentence:
                     self.nodes[node].align.append(int(tok[i]))
             elif tok[i] == '[':
                 i += 1
+                self.nodes[node].children_options.append([])
                 while tok[i] != ']':
                     self.nodes[node].children.append(self.nodes[int(tok[i])])
+                    self.nodes[node].children_options[0].append(int(tok[i]))
             elif tok[i][0] in 'LR':
                 node = int(tok[i][1:])
                 self.left_virtual.append(node)
@@ -123,9 +139,56 @@ class Sentence:
             i += 1
         for n in self.left_virtual + self.right_virtual:
             self.nodes[n].tags.append('_'.join(x.tags[0] for x in self.nodes[n].children))
+            for i, nd in enumerate(self.nodes):
+                if i == n: continue
+                newops = []
+                for op1 in self.nodes[n].children_options:
+                    s1 = strls(op1)
+                    for op2 in nd.children_options:
+                        s2 = strls(op2)
+                        if s1 in s2:
+                            l, r = s2.split(s1)
+                            newops.append([int(x) for x in l.strip().split()] + [n] +
+                                          [int(x) for x in r.strip().split()])
+                nd.children_options += newops
     def getrules(self) -> List[Rule]:
         ret = []
+        for n in (list(range(self.tl.idx)) + self.left_virtual):
+            sl = self.nodes[n]
+            for o in self.nodes[n].align:
+                tl = self.nodes[o]
+                alltl = set()
+                for op in tl.children_options:
+                    alltl.update(op)
+                for slch in sl.children_options:
+                    for tlch in tl.children_options:
+                        if any(set(self.nodes[x].align).isdisjoint(set(tlch)) for x in slch):
+                            continue
+                        order = []
+                        # TODO: there's probably several things wrong here w.r.t. unaligned terminals
+                        for s in slch:
+                            for i, t in enumerate(tlch):
+                                if t in self.nodes[s].align:
+                                    order.append(i)
+                                    break
+                        virtual = not (set(slch + [n]).isdisjoint(set(self.left_virtual)) or
+                                       set(tlch + [o]).isdisjoint(set(self.right_virtual)))
+                        parent = sl.tags[0]
+                        pat = [self.nodes[x].tags[0] for x in slch]
+                        inserts = []
+                        ret.append(Rule(parent, pat, order, inserts, virtual))
+        return ret
 
 class Corpus:
     def __init__(self, sents: List[Sentence]):
         self.sents = sents
+    def getrules(self):
+        rules = []
+        for s in self.sents:
+            rules += s.getrules()
+        non_conflict = []
+        for r in rules:
+            if not any(r.conflicts(x) for x in rules) and not any(r.redundant(x) for x in non_conflict):
+                non_conflict.append(r)
+        return non_conflict
+
