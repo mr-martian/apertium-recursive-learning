@@ -222,6 +222,16 @@ class Corpus:
         algs = run_eflomal(toks)
         for s, a in zip(self.sents, algs):
             s.setwordalignments(a)
+    def treealign(self):
+        tmp1 = tempfile.NamedTemporaryFile('w+')
+        tmp2 = tempfile.NamedTemporaryFile('w+')
+        tmp1.write('\n'.join(s.printtree() for s in self.sents))
+        tmp1.seek(0)
+        subprocess.run(['src/align-tree', tmp1.name, tmp2.name])
+        tmp2.seek(0)
+        txt = tmp2.read()
+        for l, s in zip(txt.splitlines(), self.sents):
+            s.addtreealignments(l.strip())
     def getrules(self):
         rules = []
         for s in self.sents:
@@ -232,6 +242,20 @@ class Corpus:
                 non_conflict.append(r)
         return non_conflict
 
-# TODO LIST
-# conversion to run tree aligner
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) != 3:
+        print('Usage: %s sl_trees tl_trees' % sys.argv[0])
+    else:
+        sl = []
+        tl = []
+        with open(sys.argv[1]) as f:
+            sl = [LU.fromstring(l) for l in f.read().splitlines() if l.strip()]
+        with open(sys.argv[2]) as f:
+            tl = [LU.fromstring(l) for l in f.read().splitlines() if l.strip()]
+        c = Corpus([Sentence(a, b) for a,b in zip(sl, tl)])
+        c.wordalign()
+        c.treealign()
+        for rl in c.getrules():
+            print(rl)
 
