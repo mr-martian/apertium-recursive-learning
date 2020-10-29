@@ -4,6 +4,7 @@ import itertools
 import subprocess
 import tempfile
 from tags import Attribute
+from eflomal_wrapper import run_eflomal
 
 class LU:
     def __init__(self, idx: int, lem: str, tags: List[str], children: List["LU"]):
@@ -111,11 +112,28 @@ class Sentence:
         self.nodes = list(sl.iter()) + list(tl.iter())
         for i, n in enumerate(self.nodes):
             n.idx = i
+        self.left_leaves = []
+        self.right_leaves = []
         for n in self.nodes:
             n.children_options.append([x.idx for x in n.children])
+            if n.children == []:
+                if n.idx < self.tl.idx:
+                    self.left_leaves.append(n.idx)
+                else:
+                    self.right_leaves.append(n.idx)
     def printtree(self):
         return ' '.join(x.printtree(x.idx < self.tl.idx) for x in self.nodes)
-    def addalignments(self, alg: str):
+    def getwords(self) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        left = [(self.nodes[i].lem, (self.nodes[i].tags or [''])[0]) for i in self.left_leaves]
+        right = [(self.nodes[i].lem, (self.nodes[i].tags or [''])[0]) for i in self.right_leaves]
+        return (left, right)
+    def setwordalignments(self, alg: Dict[int, int]):
+        for k in alg:
+            s = self.left_leaves[k]
+            t = self.left_leaves[alg[k]]
+            self.nodes[s].align.append(t)
+            self.nodes[t].align.append(s)
+    def addtreealignments(self, alg: str):
         tok = str.split()
         node = -1
         i = 0
@@ -182,6 +200,28 @@ class Sentence:
 class Corpus:
     def __init__(self, sents: List[Sentence]):
         self.sents = sents
+    def wordalign(self):
+        sl_ids = {}
+        tl_ids = {}
+        toks = []
+        for s in self.sents:
+            sl, tl = s.getwords()
+            sli = []
+            for w in sl:
+                k = len(sl_ids)
+                if w not in sl_ids:
+                    sl_ids[w] = k
+                sli.append(sl_ids[w])
+            tli = []
+            for w in tl:
+                k = len(tl_ids)
+                if w not in tl_ids:
+                    tl_ids[w] = k
+                tli.append(tl_ids[w])
+            toks.append((sli, tli))
+        algs = run_eflomal(toks)
+        for s, a in zip(self.sents, algs):
+            s.setwordalignments(a)
     def getrules(self):
         rules = []
         for s in self.sents:
@@ -191,4 +231,7 @@ class Corpus:
             if not any(r.conflicts(x) for x in rules) and not any(r.redundant(x) for x in non_conflict):
                 non_conflict.append(r)
         return non_conflict
+
+# TODO LIST
+# conversion to run tree aligner
 
