@@ -14,6 +14,10 @@ class LU:
         self.children = children
         self.align: List[int] = []
         self.children_options: List[List[int]] = []
+    def __str__(self):
+        return self.__repr__()
+    def __repr__(self):
+        return '^' + self.lem + ''.join('<%s>' % t for t in self.tags) + '{' + ' '.join(map(str, self.children)) + '}$'
     def fromstring(s: str) -> "LU":
         assert(s[0] == '^')
         assert(s[-1] == '$')
@@ -48,6 +52,15 @@ class LU:
             elif loc == 'none' and s[i] == '<':
                 start = i + 1
                 loc = 'tags'
+            elif loc == 'none' and s[i] in '/${':
+                if s[i] == '/':
+                    loc = 'tl'
+                elif s[i] == '$':
+                    assert(i == len(s) - 1)
+                    break
+                elif s[i] == '{':
+                    loc = 'children'
+                    start = i+1
             elif loc == 'tl' and s[i] in '${':
                 if s[i] == '$':
                     assert(i == len(s) - 1)
@@ -89,7 +102,7 @@ class Rule:
             if o < len(self.pat):
                 out.append(str(o+1))
             else:
-                out.append(self.inserts(o - len(self.pat)))
+                out.append(self.inserts[o - len(self.pat)])
         return '%s -> %s { %s }' % (self.parent, ' '.join(self.pat), ' _ '.join(out))
     def conflicts(self, other):
         if self.pat != other.pat:
@@ -116,13 +129,13 @@ class Sentence:
         self.right_leaves = []
         for n in self.nodes:
             n.children_options.append([x.idx for x in n.children])
-            if n.children == []:
+            if len(n.children) == 0:
                 if n.idx < self.tl.idx:
                     self.left_leaves.append(n.idx)
                 else:
                     self.right_leaves.append(n.idx)
     def printtree(self):
-        return ' '.join(x.printtree(x.idx < self.tl.idx) for x in self.nodes)
+        return str(len(self.nodes)) + ' ' + ' '.join(x.printtree(x.idx < self.tl.idx) for x in self.nodes)
     def getwords(self) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
         left = [(self.nodes[i].lem, (self.nodes[i].tags or [''])[0]) for i in self.left_leaves]
         right = [(self.nodes[i].lem, (self.nodes[i].tags or [''])[0]) for i in self.right_leaves]
@@ -130,11 +143,11 @@ class Sentence:
     def setwordalignments(self, alg: Dict[int, int]):
         for k in alg:
             s = self.left_leaves[k]
-            t = self.left_leaves[alg[k]]
+            t = self.right_leaves[alg[k]]
             self.nodes[s].align.append(t)
             self.nodes[t].align.append(s)
     def addtreealignments(self, alg: str):
-        tok = str.split()
+        tok = alg.split()
         node = -1
         i = 0
         while i < len(tok):
@@ -142,12 +155,14 @@ class Sentence:
                 i += 1
                 while tok[i] != ')':
                     self.nodes[node].align.append(int(tok[i]))
+                    i += 1
             elif tok[i] == '[':
                 i += 1
                 self.nodes[node].children_options.append([])
                 while tok[i] != ']':
                     self.nodes[node].children.append(self.nodes[int(tok[i])])
                     self.nodes[node].children_options[0].append(int(tok[i]))
+                    i += 1
             elif tok[i][0] in 'LR':
                 node = int(tok[i][1:])
                 self.left_virtual.append(node)
@@ -165,7 +180,7 @@ class Sentence:
                     for op2 in nd.children_options:
                         s2 = strls(op2)
                         if s1 in s2:
-                            l, r = s2.split(s1)
+                            l, r = s2.split(s1, 1)
                             newops.append([int(x) for x in l.strip().split()] + [n] +
                                           [int(x) for x in r.strip().split()])
                 nd.children_options += newops
@@ -184,15 +199,15 @@ class Sentence:
                             continue
                         order = []
                         # TODO: there's probably several things wrong here w.r.t. unaligned terminals
-                        for s in slch:
-                            for i, t in enumerate(tlch):
-                                if t in self.nodes[s].align:
+                        for t in tlch:
+                            for i, s in enumerate(slch):
+                                if s in self.nodes[t].align:
                                     order.append(i)
                                     break
                         virtual = not (set(slch + [n]).isdisjoint(set(self.left_virtual)) or
                                        set(tlch + [o]).isdisjoint(set(self.right_virtual)))
-                        parent = sl.tags[0]
-                        pat = [self.nodes[x].tags[0] for x in slch]
+                        parent = (sl.tags or ['?'])[0]
+                        pat = [(self.nodes[x].tags or ['*'])[0] for x in slch]
                         inserts = []
                         ret.append(Rule(parent, pat, order, inserts, virtual))
         return ret
@@ -223,6 +238,7 @@ class Corpus:
         for s, a in zip(self.sents, algs):
             s.setwordalignments(a)
     def treealign(self):
+        print('  running align-tree...')
         tmp1 = tempfile.NamedTemporaryFile('w+')
         tmp2 = tempfile.NamedTemporaryFile('w+')
         tmp1.write('\n'.join(s.printtree() for s in self.sents))
@@ -230,17 +246,24 @@ class Corpus:
         subprocess.run(['src/align-tree', tmp1.name, tmp2.name])
         tmp2.seek(0)
         txt = tmp2.read()
+        print('  processing alignments...')
         for l, s in zip(txt.splitlines(), self.sents):
             s.addtreealignments(l.strip())
+            print('    done with one')
     def getrules(self):
         rules = []
         for s in self.sents:
             rules += s.getrules()
         non_conflict = []
+        non_redundant = []
         for r in rules:
             if not any(r.conflicts(x) for x in rules) and not any(r.redundant(x) for x in non_conflict):
                 non_conflict.append(r)
-        return non_conflict
+            if not any(r.redundant(x) for x in non_redundant):
+                non_redundant.append(r)
+        #return non_conflict
+        #return rules
+        return non_redundant
 
 if __name__ == '__main__':
     import sys
@@ -249,13 +272,17 @@ if __name__ == '__main__':
     else:
         sl = []
         tl = []
+        print('reading...')
         with open(sys.argv[1]) as f:
             sl = [LU.fromstring(l) for l in f.read().splitlines() if l.strip()]
         with open(sys.argv[2]) as f:
             tl = [LU.fromstring(l) for l in f.read().splitlines() if l.strip()]
         c = Corpus([Sentence(a, b) for a,b in zip(sl, tl)])
+        print('eflomalizing...')
         c.wordalign()
+        print('tree-aligning...')
         c.treealign()
+        print('finding rules...')
         for rl in c.getrules():
             print(rl)
 

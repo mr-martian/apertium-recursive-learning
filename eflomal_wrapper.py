@@ -10,10 +10,10 @@ import math
 def run_eflomal(sents: List[Tuple[List[int], List[int]]]) -> List[Dict[int, int]]:
     sl_nums = NamedTemporaryFile('wb+')
     sl = tuple([numpy.asarray(x[0], dtype=numpy.uint32) for x in sents])
-    eflomal.write_text(sl_nums, sl, max(map(lambda x: max(x[0]), sents)))
+    eflomal.write_text(sl_nums, sl, 1+max(map(lambda x: max(x[0]), sents)))
     tl_nums = NamedTemporaryFile('wb+')
     tl = tuple([numpy.asarray(x[1], dtype=numpy.uint32) for x in sents])
-    eflomal.write_text(tl_nums, tl, max(map(lambda x: max(x[1]), sents)))
+    eflomal.write_text(tl_nums, tl, 1+max(map(lambda x: max(x[1]), sents)))
 
     # I don't know what this is calculating, but it corresponds to the
     # default arguments in the eflomal python interface
@@ -31,7 +31,7 @@ def run_eflomal(sents: List[Tuple[List[int], List[int]]]) -> List[Dict[int, int]
         dct = {}
         for nums in line.split():
             sl, tl = nums.split('-')
-            dct[int(sl)] = [int(tl)]
+            dct[int(sl)] = int(tl)
         ret.append(dct)
     return ret
 
