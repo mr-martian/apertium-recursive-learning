@@ -196,13 +196,31 @@ getAlignments(std::vector<Node*>& nodes)
   for(size_t i = 0; i < left.size(); i++) {
     if(!nodes[left[i].first]->children.empty() &&
        nodes[left[i].first]->align.empty()) {
-      ltodo.push_back(i);
+      bool any_aligned = false;
+      for(auto it : left[i].second) {
+        if(!nodes[it]->align.empty()) {
+          any_aligned = true;
+          break;
+        }
+      }
+      if(any_aligned) {
+        ltodo.push_back(i);
+      }
     }
   }
   for(size_t i = 0; i < right.size(); i++) {
     if(!nodes[right[i].first]->children.empty() &&
        nodes[right[i].first]->align.empty()) {
-      rtodo.push_back(i);
+      bool any_aligned = false;
+      for(auto it : right[i].second) {
+        if(!nodes[it]->align.empty()) {
+          any_aligned = true;
+          break;
+        }
+      }
+      if(any_aligned) {
+        rtodo.push_back(i);
+      }
     }
   }
   std::vector<size_t> ltodo_partial, rtodo_partial;
@@ -210,15 +228,15 @@ getAlignments(std::vector<Node*>& nodes)
     Yield rch_all; // all descendants of potential virtual node
     Yield rpar_all; // all ancestors of potential virtual node
     for(size_t i = 0; i < right.size(); i++) {
-      if(rinl[l][i]) rch_all.insert(i);
-      if(linr[l][i]) rpar_all.insert(i);
+      if(rinl[l][i]) rch_all.insert(right[i].first);
+      if(linr[l][i]) rpar_all.insert(right[i].first);
     }
     Yield rch = getHighest(rch_all, nodes);
     Yield rpar = getLowest(rpar_all, nodes);
     if(rpar.size() == 1) {
       int par = *rpar.begin();
       std::vector<int> ch = nodes[par]->children;
-      if(isContiguousSubset(ch, rch)) {
+      if(!ch.empty() && isContiguousSubset(ch, rch)) {
         Node* v = new Node;
         v->id = nodes.size();
         v->isLeft = false;
@@ -237,15 +255,15 @@ getAlignments(std::vector<Node*>& nodes)
     Yield lch_all; // all descendants of potential virtual node
     Yield lpar_all; // all ancestors of potential virtual node
     for(size_t i = 0; i < left.size(); i++) {
-      if(linr[i][r]) lch_all.insert(i);
-      if(rinl[i][r]) lpar_all.insert(i);
+      if(linr[i][r]) lch_all.insert(left[i].first);
+      if(rinl[i][r]) lpar_all.insert(left[i].first);
     }
     Yield lch = getHighest(lch_all, nodes);
     Yield lpar = getLowest(lpar_all, nodes);
     if(lpar.size() == 1) {
       int par = *lpar.begin();
       std::vector<int> ch = nodes[par]->children;
-      if(isContiguousSubset(ch, lch)) {
+      if(!ch.empty() && isContiguousSubset(ch, lch)) {
         Node* v = new Node;
         v->id = nodes.size();
         v->isLeft = true;

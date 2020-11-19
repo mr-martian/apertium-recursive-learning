@@ -147,9 +147,21 @@ class Sentence:
             self.nodes[s].align.append(t)
             self.nodes[t].align.append(s)
     def addtreealignments(self, alg: str):
+        print(self.printtree())
+        print(alg)
         tok = alg.split()
         node = -1
         i = 0
+        print('len = %s' % len(self.nodes))
+        for t in tok:
+            if t[0] in 'LR':
+                n = int(t[1:])
+                self.nodes.append(LU(node, '', [], []))
+                if t[0] == 'L':
+                    self.left_virtual.append(n)
+                else:
+                    self.right_virtual.append(n)
+        print('len = %s' % len(self.nodes))
         while i < len(tok):
             if tok[i] == '(':
                 i += 1
@@ -158,6 +170,7 @@ class Sentence:
                     i += 1
             elif tok[i] == '[':
                 i += 1
+                print(node)
                 self.nodes[node].children_options.append([])
                 while tok[i] != ']':
                     self.nodes[node].children.append(self.nodes[int(tok[i])])
@@ -165,8 +178,6 @@ class Sentence:
                     i += 1
             elif tok[i][0] in 'LR':
                 node = int(tok[i][1:])
-                self.left_virtual.append(node)
-                self.nodes.append(LU(node, '', [], []))
             else:
                 node = int(tok[i])
             i += 1
