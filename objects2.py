@@ -197,30 +197,55 @@ class Sentence:
                 nd.children_options += newops
     def getrules(self) -> List[Rule]:
         ret = []
+        print(self.printtree())
         for n in (list(range(self.tl.idx)) + self.left_virtual):
             sl = self.nodes[n]
+            if len(sl.children) == 0:
+                continue
             for o in self.nodes[n].align:
+                print('  trying %s -- %s' % (n, o))
                 tl = self.nodes[o]
                 alltl = set()
                 for op in tl.children_options:
                     alltl.update(op)
                 for slch in sl.children_options:
+                    allsl = set()
+                    for s in slch:
+                        for c in self.nodes[s].iter():
+                            allsl.update(c.align)
                     for tlch in tl.children_options:
-                        if any(set(self.nodes[x].align).isdisjoint(set(tlch)) for x in slch):
+                        print('    L%s%s -- R%s%s' % (n, slch, o, tlch))
+                        alltl = set()
+                        for t in tlch:
+                            for c in self.nodes[t].iter():
+                                if len(c.children) == 0:
+                                    alltl.add(c.idx)
+                        if allsl.isdisjoint(alltl):
+                            print('      no aligned terminals')
                             continue
                         order = []
-                        # TODO: there's probably several things wrong here w.r.t. unaligned terminals
+                        inserts = []
                         for t in tlch:
+                            if all(len(x.align) == 0 for x in self.nodes[t].iter()):
+                                order.append(len(slch) + len(inserts))
+                                #inserts.append('blah')
+                                inserts.append(str(self.nodes[t]))
+                                continue
                             for i, s in enumerate(slch):
                                 if s in self.nodes[t].align:
                                     order.append(i)
                                     break
-                        virtual = not (set(slch + [n]).isdisjoint(set(self.left_virtual)) or
-                                       set(tlch + [o]).isdisjoint(set(self.right_virtual)))
-                        parent = (sl.tags or ['?'])[0]
-                        pat = [(self.nodes[x].tags or ['*'])[0] for x in slch]
-                        inserts = []
-                        ret.append(Rule(parent, pat, order, inserts, virtual))
+                            else:
+                                # found a TL that isn't an unaligned terminal
+                                # so give up
+                                break
+                        else:
+                            parent = (sl.tags or ['?'])[0]
+                            virtual = not (set(slch + [n]).isdisjoint(set(self.left_virtual)) or
+                                           set(tlch + [o]).isdisjoint(set(self.right_virtual)))
+                            pat = [(self.nodes[x].tags or ['*'])[0] for x in slch]
+                            ret.append(Rule(parent, pat, order, inserts, virtual))
+                            print(ret[-1])
         return ret
 
 class Corpus:
@@ -273,8 +298,8 @@ class Corpus:
             if not any(r.redundant(x) for x in non_redundant):
                 non_redundant.append(r)
         #return non_conflict
-        #return rules
-        return non_redundant
+        return rules
+        #return non_redundant
 
 if __name__ == '__main__':
     import sys
