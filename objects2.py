@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 from tags import Attribute
 from eflomal_wrapper import run_eflomal
+from collections import defaultdict
 
 class LU:
     def __init__(self, idx: int, lem: str, tags: List[str], children: List["LU"]):
@@ -137,8 +138,8 @@ class Sentence:
     def printtree(self):
         return str(len(self.nodes)) + ' ' + ' '.join(x.printtree(x.idx < self.tl.idx) for x in self.nodes)
     def getwords(self) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
-        left = [(self.nodes[i].lem, (self.nodes[i].tags or [''])[0]) for i in self.left_leaves]
-        right = [(self.nodes[i].lem, (self.nodes[i].tags or [''])[0]) for i in self.right_leaves]
+        left = [(self.nodes[i].lem.lower(), (self.nodes[i].tags or [''])[0]) for i in self.left_leaves]
+        right = [(self.nodes[i].lem.lower(), (self.nodes[i].tags or [''])[0]) for i in self.right_leaves]
         return (left, right)
     def setwordalignments(self, alg: Dict[int, int]):
         for k in alg:
@@ -273,6 +274,34 @@ class Corpus:
         algs = run_eflomal(toks)
         for s, a in zip(self.sents, algs):
             s.setwordalignments(a)
+    def biltrans_align(self, fname):
+        def lemtag(s):
+            l = s.split('<')
+            lem = l[0].lower()
+            tg = ''
+            if len(l) > 1:
+                tg = l[1][:-1]
+            return (lem, tg)
+        trans = defaultdict(list)
+        with open(fname) as f:
+            s = f.read()
+            i = 0
+            while '^' in s[i:]:
+                i = s.index('^', i)
+                e = s.index('$', i)
+                lus = s[i+1:e].split('/')
+                sl = lemtag(lus[0])
+                for tl in lus[1:]:
+                    trans[sl].append(lemtag(tl))
+                i = e
+        for s in self.sents:
+            sl, tl = s.getwords()
+            for i, w in enumerate(sl):
+                if w not in trans:
+                    continue
+                for j, v in enumerate(tl):
+                    if v in trans[w]:
+                        s.setwordalignments({i: j})
     def treealign(self):
         print('  running align-tree...')
         tmp1 = tempfile.NamedTemporaryFile('w+')
@@ -303,8 +332,8 @@ class Corpus:
 
 if __name__ == '__main__':
     import sys
-    if len(sys.argv) != 3:
-        print('Usage: %s sl_trees tl_trees' % sys.argv[0])
+    if len(sys.argv) not in [3,4]:
+        print('Usage: %s sl_trees tl_trees [biltrans]' % sys.argv[0])
     else:
         sl = []
         tl = []
@@ -314,8 +343,12 @@ if __name__ == '__main__':
         with open(sys.argv[2]) as f:
             tl = [LU.fromstring(l) for l in f.read().splitlines() if l.strip()]
         c = Corpus([Sentence(a, b) for a,b in zip(sl, tl)])
-        print('eflomalizing...')
-        c.wordalign()
+        if len(sys.argv) == 4:
+            print('biltrans-aligning...')
+            c.biltrans_align(sys.argv[3])
+        else:
+            print('eflomalizing...')
+            c.wordalign()
         print('tree-aligning...')
         c.treealign()
         print('finding rules...')
