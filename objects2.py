@@ -89,6 +89,8 @@ class LU:
             yield from ch.iter()
     def printtree(self, left: bool):
         return ('L' if left else 'R') + str(self.idx) + '[' + ' '.join(str(x.idx) for x in self.children) + '](' + ' '.join(map(str, self.align)) + ')'
+    def pattern(self):
+        return '"' + self.lem.lower() + '"@' + (self.tags or ['nothing'])[0]
 
 class Rule:
     def __init__(self, parent: str, pat: List[str], order: List[int], inserts: List[str], virtual: bool = False):
@@ -97,6 +99,7 @@ class Rule:
         self.order = order
         self.inserts = inserts
         self.virtual = virtual
+        self.weight = 0
     def __repr__(self):
         out = []
         for o in self.order:
@@ -104,7 +107,10 @@ class Rule:
                 out.append(str(o+1))
             else:
                 out.append(self.inserts[o - len(self.pat)])
-        return '%s -> %s { %s }' % (self.parent, ' '.join(self.pat), ' _ '.join(out))
+        wgt = ''
+        if self.weight > 0:
+            wgt = ' %s:' % self.weight
+        return '%s ->%s %s { %s } ;' % (self.parent, wgt, ' '.join(self.pat), ' _ '.join(out))
     def conflicts(self, other):
         if self.pat != other.pat:
             return False
@@ -148,12 +154,12 @@ class Sentence:
             self.nodes[s].align.append(t)
             self.nodes[t].align.append(s)
     def addtreealignments(self, alg: str):
-        print(self.printtree())
-        print(alg)
+        #print(self.printtree())
+        #print(alg)
         tok = alg.split()
         node = -1
         i = 0
-        print('len = %s' % len(self.nodes))
+        #print('len = %s' % len(self.nodes))
         for t in tok:
             if t[0] in 'LR':
                 n = int(t[1:])
@@ -162,7 +168,7 @@ class Sentence:
                     self.left_virtual.append(n)
                 else:
                     self.right_virtual.append(n)
-        print('len = %s' % len(self.nodes))
+        #print('len = %s' % len(self.nodes))
         while i < len(tok):
             if tok[i] == '(':
                 i += 1
@@ -171,7 +177,7 @@ class Sentence:
                     i += 1
             elif tok[i] == '[':
                 i += 1
-                print(node)
+                #print(node)
                 self.nodes[node].children_options.append([])
                 while tok[i] != ']':
                     self.nodes[node].children.append(self.nodes[int(tok[i])])
@@ -183,7 +189,7 @@ class Sentence:
                 node = int(tok[i])
             i += 1
         for n in self.left_virtual + self.right_virtual:
-            self.nodes[n].tags.append('_'.join(x.tags[0] for x in self.nodes[n].children))
+            self.nodes[n].tags.append('_'.join((x.tags or ['*'])[0] for x in self.nodes[n].children))
             for i, nd in enumerate(self.nodes):
                 if i == n: continue
                 newops = []
@@ -198,13 +204,13 @@ class Sentence:
                 nd.children_options += newops
     def getrules(self) -> List[Rule]:
         ret = []
-        print(self.printtree())
+        #print(self.printtree())
         for n in (list(range(self.tl.idx)) + self.left_virtual):
             sl = self.nodes[n]
-            if len(sl.children) == 0:
+            if len(sl.children) == 0 or sl.tags == ['UNKNOWN:INTERNAL']:
                 continue
             for o in self.nodes[n].align:
-                print('  trying %s -- %s' % (n, o))
+                #print('  trying %s -- %s' % (n, o))
                 tl = self.nodes[o]
                 alltl = set()
                 for op in tl.children_options:
@@ -215,22 +221,21 @@ class Sentence:
                         for c in self.nodes[s].iter():
                             allsl.update(c.align)
                     for tlch in tl.children_options:
-                        print('    L%s%s -- R%s%s' % (n, slch, o, tlch))
+                        #print('    L%s%s -- R%s%s' % (n, slch, o, tlch))
                         alltl = set()
                         for t in tlch:
                             for c in self.nodes[t].iter():
                                 if len(c.children) == 0:
                                     alltl.add(c.idx)
                         if allsl.isdisjoint(alltl):
-                            print('      no aligned terminals')
+                            #print('      no aligned terminals')
                             continue
                         order = []
                         inserts = []
                         for t in tlch:
                             if all(len(x.align) == 0 for x in self.nodes[t].iter()):
                                 order.append(len(slch) + len(inserts))
-                                #inserts.append('blah')
-                                inserts.append(str(self.nodes[t]))
+                                inserts.append(self.nodes[t].pattern())
                                 continue
                             for i, s in enumerate(slch):
                                 if s in self.nodes[t].align:
@@ -244,9 +249,13 @@ class Sentence:
                             parent = (sl.tags or ['?'])[0]
                             virtual = not (set(slch + [n]).isdisjoint(set(self.left_virtual)) or
                                            set(tlch + [o]).isdisjoint(set(self.right_virtual)))
-                            pat = [(self.nodes[x].tags or ['*'])[0] for x in slch]
+                            pat = []
+                            for x in slch:
+                                if self.nodes[x].tags and self.nodes[x].tags != ['UNKNOWN:INTERNAL']:
+                                    pat.append(self.nodes[x].tags[0])
+                                else:
+                                    pat.append('*')
                             ret.append(Rule(parent, pat, order, inserts, virtual))
-                            print(ret[-1])
         return ret
 
 class Corpus:
@@ -314,7 +323,7 @@ class Corpus:
         print('  processing alignments...')
         for l, s in zip(txt.splitlines(), self.sents):
             s.addtreealignments(l.strip())
-            print('    done with one')
+            #print('    done with one')
     def getrules(self):
         rules = []
         for s in self.sents:
@@ -324,11 +333,15 @@ class Corpus:
         for r in rules:
             if not any(r.conflicts(x) for x in rules) and not any(r.redundant(x) for x in non_conflict):
                 non_conflict.append(r)
-            if not any(r.redundant(x) for x in non_redundant):
+            for other in non_redundant:
+                if r.redundant(other):
+                    other.weight += 1
+                    break
+            else:
                 non_redundant.append(r)
         #return non_conflict
-        return rules
-        #return non_redundant
+        #return rules
+        return non_redundant
 
 if __name__ == '__main__':
     import sys
@@ -342,6 +355,7 @@ if __name__ == '__main__':
             sl = [LU.fromstring(l) for l in f.read().splitlines() if l.strip()]
         with open(sys.argv[2]) as f:
             tl = [LU.fromstring(l) for l in f.read().splitlines() if l.strip()]
+        print('read in %s sentences' % len(sl))
         c = Corpus([Sentence(a, b) for a,b in zip(sl, tl)])
         if len(sys.argv) == 4:
             print('biltrans-aligning...')
@@ -352,6 +366,18 @@ if __name__ == '__main__':
         print('tree-aligning...')
         c.treealign()
         print('finding rules...')
-        for rl in c.getrules():
+        rls = c.getrules()
+        tags = set()
+        for rl in rls:
             print(rl)
+            tags.add(rl.parent)
+            tags.update(rl.pat)
+        print('processed %s sentences' % len(c.sents))
+        with open('blah.rtx', 'w') as f:
+            for t in tags:
+                if t != '*':
+                    print('%s: _;' % t, file=f)
+            print('\n', file=f)
+            for rl in rls:
+                print(rl, file=f)
 
