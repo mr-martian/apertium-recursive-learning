@@ -4,7 +4,7 @@ import itertools
 import subprocess
 import tempfile
 from tags import Attribute
-from eflomal_wrapper import run_eflomal
+from eflomal_wrapper import run_eflomal, postedit_eflomal
 from collections import defaultdict
 
 class LU:
@@ -150,9 +150,11 @@ class Sentence:
     def setwordalignments(self, alg: Dict[int, int]):
         for k in alg:
             s = self.left_leaves[k]
-            t = self.right_leaves[alg[k]]
-            self.nodes[s].align.append(t)
-            self.nodes[t].align.append(s)
+            v = alg[k] if isinstance(alg[k], list) else [alg[k]]
+            for i in v:
+                t = self.right_leaves[i]
+                self.nodes[s].align.append(t)
+                self.nodes[t].align.append(s)
     def addtreealignments(self, alg: str):
         #print(self.printtree())
         #print(alg)
@@ -261,7 +263,7 @@ class Sentence:
 class Corpus:
     def __init__(self, sents: List[Sentence]):
         self.sents = sents
-    def wordalign(self):
+    def wordalign(self, fname=None):
         sl_ids = {}
         tl_ids = {}
         toks = []
@@ -280,7 +282,11 @@ class Corpus:
                     tl_ids[w] = k
                 tli.append(tl_ids[w])
             toks.append((sli, tli))
-        algs = run_eflomal(toks)
+        algs = []
+        if fname:
+            algs = postedit_eflomal(fname)
+        else:
+            algs = run_eflomal(toks)
         for s, a in zip(self.sents, algs):
             s.setwordalignments(a)
     def biltrans_align(self, fname):
@@ -343,38 +349,39 @@ class Corpus:
         #return rules
         return non_redundant
 
+def read_tree_file(fname):
+    with open(fname) as f:
+        return [LU.fromstring(l) for l in f.read().splitlines() if l.strip()]
+    
 if __name__ == '__main__':
-    import sys
-    if len(sys.argv) not in [3,4]:
-        print('Usage: %s sl_trees tl_trees [biltrans]' % sys.argv[0])
+    import argparse
+    parser = argparse.ArgumentParser('Generate RTX rules')
+    parser.add_argument('sl_trees', help="file to read source language trees from")
+    parser.add_argument('tl_trees', help="file to read target language trees from")
+    parser.add_argument('--biltrans', '-b', help="file to read biltrans alignment data from", action='store')
+    parser.add_argument('--align', '-a', help="file to read post-editted eflomal data from", action='store')
+    parser.add_argument('--output', '-o', help="output file", action='store')
+    args = parser.parse_args()
+
+    sl = read_tree_file(args.sl_trees)
+    tl = read_tree_file(args.tl_trees)
+    c = Corpus([Sentence(a, b) for a,b in zip(sl, tl)])
+    if args.biltrans:
+        c.biltrans_align(args.biltrans)
+    elif args.align:
+        c.wordalign(args.align)
     else:
-        sl = []
-        tl = []
-        print('reading...')
-        with open(sys.argv[1]) as f:
-            sl = [LU.fromstring(l) for l in f.read().splitlines() if l.strip()]
-        with open(sys.argv[2]) as f:
-            tl = [LU.fromstring(l) for l in f.read().splitlines() if l.strip()]
-        print('read in %s sentences' % len(sl))
-        c = Corpus([Sentence(a, b) for a,b in zip(sl, tl)])
-        if len(sys.argv) == 4:
-            print('biltrans-aligning...')
-            c.biltrans_align(sys.argv[3])
-        else:
-            print('eflomalizing...')
-            c.wordalign()
-        print('tree-aligning...')
-        c.treealign()
-        print('finding rules...')
-        rls = c.getrules()
-        tags = set()
-        for rl in rls:
-            print(rl)
-            tags.add(rl.parent)
-            tags.update(rl.pat)
-        print('processed %s sentences' % len(c.sents))
-        with open('blah.rtx', 'w') as f:
-            for t in tags:
+        c.wordalign()
+    c.treealign()
+    c.treealign()
+    rls = c.getrules()
+    tags = set()
+    for rl in rls:
+        tags.add(rl.parent)
+        tags.update(rl.pat)
+    if args.output:
+        with open(args.output, 'w') as f:
+            for t in sorted(tags):
                 if t != '*':
                     print('%s: _;' % t, file=f)
             print('\n', file=f)

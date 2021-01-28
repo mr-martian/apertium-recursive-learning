@@ -144,3 +144,10 @@ install-sh
 missing
 src/align-tree
 stamp-h1
+
+*.bin
+*eflomal*
+*.rtx.*.txt
+*.rtx.txt
+*.bil.rtx
+*.tree.txt

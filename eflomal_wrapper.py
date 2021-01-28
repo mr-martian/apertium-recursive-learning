@@ -6,6 +6,7 @@ from tempfile import NamedTemporaryFile
 import subprocess
 from typing import List, Tuple, Dict
 import math
+from collections import defaultdict
 
 def run_eflomal(sents: List[Tuple[List[int], List[int]]]) -> List[Dict[int, int]]:
     sl_nums = NamedTemporaryFile('wb+')
@@ -22,7 +23,8 @@ def run_eflomal(sents: List[Tuple[List[int], List[int]]]) -> List[Dict[int, int]
     iters4 = max(1, iters//4)
     defaults += ['-1', str(max(2, iters4)), '-2', str(iters4), '-3', str(iters)]
 
-    align = NamedTemporaryFile('w+')
+    #align = NamedTemporaryFile('w+')
+    align = open('jam-alignments.txt', 'w+')
     subprocess.run(['eflomal', '-s', sl_nums.name, '-t', tl_nums.name,
                     '-f', align.name, '-q'] + defaults)
     align.seek(0)
@@ -33,5 +35,17 @@ def run_eflomal(sents: List[Tuple[List[int], List[int]]]) -> List[Dict[int, int]
             sl, tl = nums.split('-')
             dct[int(sl)] = int(tl)
         ret.append(dct)
+    align.close()
     return ret
+
+def postedit_eflomal(fname):
+    with open(fname) as f:
+        ret = []
+        for line in f.read().splitlines():
+            dct = defaultdict(list)
+            for nums in line.split():
+                sl, tl = nums.split('-')
+                dct[int(sl)].append(int(tl))
+            ret.append(dct)
+        return ret
 
