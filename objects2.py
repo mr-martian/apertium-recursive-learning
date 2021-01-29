@@ -172,6 +172,7 @@ class Sentence:
                     self.right_virtual.append(n)
         #print('len = %s' % len(self.nodes))
         while i < len(tok):
+            #print(tok[i:])
             if tok[i] == '(':
                 i += 1
                 while tok[i] != ')':
@@ -190,6 +191,7 @@ class Sentence:
             else:
                 node = int(tok[i])
             i += 1
+        #print('looping virtual!')
         for n in self.left_virtual + self.right_virtual:
             self.nodes[n].tags.append('_'.join((x.tags or ['*'])[0] for x in self.nodes[n].children))
             for i, nd in enumerate(self.nodes):
